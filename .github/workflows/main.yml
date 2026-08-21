@@ -1,4 +1,8 @@
-name: Build Ganama Quincaillerie APK
+- name: Rendre Gradle exécutable
+  run: chmod +x gradlew
+
+- name: Compiler l'application
+  run: ./gradlew assembleDebug --no-daemon ./gradlew assembleDebug --no-daemonname: Build Ganama Quincaillerie APK
 
 on:
   workflow_dispatch:
