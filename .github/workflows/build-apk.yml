@@ -37,3 +37,12 @@ jobs:
         with:
           name: Ganama-Quincaillerie-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+- name: Rendre Gradle executable
+  run: |
+    chmod +x ./gradlew
+    ls -l ./gradlew
+
+- name: Compiler l'application
+  run: |
+    chmod +x ./gradlew
+    ./gradlew assembleDebug --no-daemon
