@@ -22,8 +22,17 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Compiler l'application
-        run: gradle assembleDebug --no-daemon
+      - name: Vérifier le projet
+  run: |
+    echo "Dossier actuel :"
+    pwd
+    echo "Fichiers présents :"
+    ls -la
+    echo "Dossier app :"
+    ls -la app
+
+- name: Compiler l'application
+  run: gradle :app:assembleDebug --no-daemon
 
       - name: Recuperer l'APK
         uses: actions/upload-artifact@v4
