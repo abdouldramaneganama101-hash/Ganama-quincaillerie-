@@ -17,25 +17,44 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Installer Gradle 8.13
+      - name: Installer Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: '8.13.2'
 
-      - name: Vérifier le projet
-  run: |
-    echo "Dossier actuel :"
-    pwd
-    echo "Fichiers présents :"
-    ls -la
-    echo "Dossier app :"
-    ls -la app
+      - name: Trouver le projet Gradle
+        run: |
+          echo "Recherche de settings.gradle.kts..."
+          find . -name "settings.gradle.kts" -type f -print
 
-- name: Compiler l'application
-  run: gradle :app:assembleDebug --no-daemon
+      - name: Compiler l'application
+        run: |
+          PROJECT_FILE=$(find . -name "settings.gradle.kts" -type f | head -n 1)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERREUR : settings.gradle.kts introuvable."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+
+          echo "Projet Gradle trouvé dans : $PROJECT_DIR"
+
+          cd "$PROJECT_DIR"
+
+          echo "Fichiers du projet :"
+          ls -la
+
+          echo "Compilation de l'APK..."
+          gradle :app:assembleDebug --no-daemon
+
+      - name: Vérifier l'APK
+        run: |
+          find . -path "*/app/build/outputs/apk/debug/*.apk" -type f -print
 
       - name: Recuperer l'APK
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: '**/app/build/outputs/apk/debug/*.apk'
+          if-no-files-found: error
