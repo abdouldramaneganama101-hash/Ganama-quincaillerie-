@@ -17,44 +17,44 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Installer Gradle
+      - name: Installer Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13.2'
+          gradle-version: '8.13'
 
-      - name: Trouver le projet Gradle
+      - name: Verifier les fichiers du projet
         run: |
-          echo "Recherche de settings.gradle.kts..."
-          find . -name "settings.gradle.kts" -type f -print
+          echo "=== CONTENU DU DEPOT ==="
+          find . -maxdepth 3 -type f | sort
+          echo "=== FIN ==="
 
-      - name: Compiler l'application
+      - name: Trouver le projet Android
         run: |
-          PROJECT_FILE=$(find . -name "settings.gradle.kts" -type f | head -n 1)
+          SETTINGS=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
 
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "ERREUR : settings.gradle.kts introuvable."
+          if [ -z "$SETTINGS" ]; then
+            echo "ERREUR : aucun settings.gradle trouve."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "Projet trouve dans : $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projet Gradle trouvé dans : $PROJECT_DIR"
-
-          cd "$PROJECT_DIR"
-
-          echo "Fichiers du projet :"
-          ls -la
-
-          echo "Compilation de l'APK..."
-          gradle :app:assembleDebug --no-daemon
-
-      - name: Vérifier l'APK
+      - name: Compiler l'APK
         run: |
-          find . -path "*/app/build/outputs/apk/debug/*.apk" -type f -print
+          cd "$PROJECT_DIR"
+          gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Recuperer l'APK
+      - name: Chercher l'APK
+        run: |
+          echo "=== APK TROUVE ==="
+          find . -name "*.apk" -type f -print
+          echo "=== FIN ==="
+
+      - name: Publier l'APK
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK
-          path: '**/app/build/outputs/apk/debug/*.apk'
+          path: '**/*.apk'
           if-no-files-found: error
