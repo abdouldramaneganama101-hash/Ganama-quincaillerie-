@@ -1,3 +1,14 @@
 plugins {
-    id("com.android.application") version "8.13.2" apply false
+    id("com.android.application")
+}
+android {
+    namespace = "com.ganama.quincaillerie"
+    compileSdk = 36
+    defaultConfig {
+        applicationId = "com.ganama.quincaillerie"
+        minSdk = 23
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+    }
 }
