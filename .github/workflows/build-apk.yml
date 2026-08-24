@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Recuperer le projet
+      - name: Recuperer le depot
         uses: actions/checkout@v4
 
       - name: Installer Java 17
@@ -17,44 +17,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Decompresser le projet Android
+        run: |
+          mkdir extracted
+          ZIP=$(find . -maxdepth 1 -type f -name '*.zip' | head -1)
+          unzip -q "$ZIP" -d extracted
+
+          PROJECT_DIR=$(find extracted -type d -name app -print -quit | xargs dirname)
+
+          echo "Projet Android trouve dans: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Installer Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
 
-      - name: Verifier les fichiers du projet
-        run: |
-          echo "=== CONTENU DU DEPOT ==="
-          find . -maxdepth 3 -type f | sort
-          echo "=== FIN ==="
-
-      - name: Trouver le projet Android
-        run: |
-          SETTINGS=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERREUR : aucun settings.gradle trouve."
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "Projet trouve dans : $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Compiler l'APK
+      - name: Compiler l APK
         run: |
           cd "$PROJECT_DIR"
           gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Chercher l'APK
-        run: |
-          echo "=== APK TROUVE ==="
-          find . -name "*.apk" -type f -print
-          echo "=== FIN ==="
-
-      - name: Publier l'APK
+      - name: Publier l APK
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK
-          path: '**/*.apk'
+          path: '**/app/build/outputs/apk/debug/app-debug.apk'
           if-no-files-found: error
