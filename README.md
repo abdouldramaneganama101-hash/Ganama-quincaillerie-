@@ -1,9 +1,11 @@
-# Ganama Quincaillerie — Android
+# Ganama Quincaillerie Android
 
-Projet source Android avec configuration Gradle.
-Nom : Ganama Quincaillerie
-Contacts : 55 28 46 12 / 55 88 38 58
-Version : 1.0
+Projet Android complet pour Ganama Quincaillerie.
 
-Le projet utilise Android Gradle Plugin 8.13.2 et Gradle 8.13.
-Le fichier gradle-wrapper.properties est inclus.
+## Compilation APK avec GitHub Actions
+
+1. Téléverser le contenu de ce dossier dans la racine du dépôt GitHub.
+2. Ouvrir **Actions**.
+3. Choisir **Build Ganama Quincaillerie APK**.
+4. Appuyer sur **Run workflow** puis **Run workflow**.
+5. Après une coche verte, ouvrir l'exécution et télécharger l'artefact **Ganama-Quincaillerie-APK**.
