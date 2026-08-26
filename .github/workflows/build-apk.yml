@@ -20,45 +20,70 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Find and extract Android project
+      - name: Find Android project
         shell: bash
         run: |
           set -e
 
-          mkdir -p extracted
+          PROJECT_DIR=""
 
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          # 1. Chercher directement le projet dans le dépôt
+          if [ -f "settings.gradle.kts" ] && [ -d "app" ]; then
+            PROJECT_DIR="."
+          elif [ -f "settings.gradle" ] && [ -d "app" ]; then
+            PROJECT_DIR="."
+          fi
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "No ZIP file found."
+          # 2. Si le projet n'est pas à la racine, chercher dans les dossiers
+          if [ -z "$PROJECT_DIR" ]; then
+            SETTINGS_FILE=$(find . -type f \
+              \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+              -not -path "./.git/*" | head -n 1)
 
-            if [ -f "settings.gradle.kts" ] && [ -d "app" ]; then
-              echo "Android project already exists in repository root."
-              echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-              exit 0
+            if [ -n "$SETTINGS_FILE" ]; then
+              PROJECT_DIR=$(dirname "$SETTINGS_FILE")
             fi
+          fi
 
+          # 3. Si toujours rien, chercher dans le ZIP
+          if [ -z "$PROJECT_DIR" ]; then
+            ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+
+            if [ -n "$ZIP_FILE" ]; then
+              echo "ZIP trouvé : $ZIP_FILE"
+
+              mkdir -p extracted
+              unzip -q "$ZIP_FILE" -d extracted
+
+              SETTINGS_FILE=$(find extracted -type f \
+                \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+                | head -n 1)
+
+              if [ -n "$SETTINGS_FILE" ]; then
+                PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+              fi
+            fi
+          fi
+
+          # 4. Vérification finale
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERREUR : aucun projet Android avec settings.gradle(.kts) n'a été trouvé."
+            echo "Fichiers trouvés :"
+            find . -maxdepth 4 -type f | head -n 200
             exit 1
           fi
 
-          echo "ZIP found: $ZIP_FILE"
-          unzip -q "$ZIP_FILE" -d extracted
-
-          SETTINGS_FILE=$(find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "No Android project found after extraction."
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "ERREUR : le dossier app est absent de $PROJECT_DIR"
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
-          echo "Android project: $PROJECT_DIR"
+          echo "Projet Android trouvé : $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
@@ -67,6 +92,7 @@ jobs:
           gradle-version: '8.13'
 
       - name: Make Gradle executable
+        shell: bash
         run: |
           if [ -f "$PROJECT_DIR/gradlew" ]; then
             chmod +x "$PROJECT_DIR/gradlew"
@@ -88,6 +114,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK
-          path: |
-            **/app/build/outputs/apk/debug/*.apk
+          path: "**/app/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
