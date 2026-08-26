@@ -3,8 +3,12 @@ name: Build Ganama Quincaillerie APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
@@ -20,70 +24,90 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK
+      - name: Install Android SDK 36
+        shell: bash
         run: |
-          yes | sdkmanager --licenses || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Find Android project
+      - name: Find and extract Android project
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR=""
+          echo "Recherche du projet Android..."
 
-          # 1. Chercher directement le projet dans le dépôt
+          # Vérifier d'abord si le projet est déjà directement dans le dépôt.
           if [ -f "settings.gradle.kts" ] && [ -d "app" ]; then
-            PROJECT_DIR="."
+            PROJECT_DIR="$PWD"
+            echo "Projet trouvé directement dans le dépôt."
+
           elif [ -f "settings.gradle" ] && [ -d "app" ]; then
-            PROJECT_DIR="."
-          fi
+            PROJECT_DIR="$PWD"
+            echo "Projet trouvé directement dans le dépôt."
 
-          # 2. Si le projet n'est pas à la racine, chercher dans les dossiers
-          if [ -z "$PROJECT_DIR" ]; then
-            SETTINGS_FILE=$(find . -type f \
+          else
+            echo "Projet non trouvé à la racine."
+            echo "Recherche d'un fichier ZIP..."
+
+            ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+              -type f \
+              -iname "*.zip" \
+              -not -path "*/.git/*" \
+              | head -n 1)
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERREUR : aucun fichier ZIP trouvé."
+              echo "Fichiers présents dans le dépôt :"
+              find "$GITHUB_WORKSPACE" -maxdepth 4 -type f | head -n 200
+              exit 1
+            fi
+
+            echo "ZIP trouvé : $ZIP_FILE"
+
+            rm -rf "$GITHUB_WORKSPACE/extracted"
+            mkdir -p "$GITHUB_WORKSPACE/extracted"
+
+            unzip -q "$ZIP_FILE" -d "$GITHUB_WORKSPACE/extracted"
+
+            echo "ZIP décompressé."
+            echo "Recherche de settings.gradle..."
+
+            SETTINGS_FILE=$(find "$GITHUB_WORKSPACE/extracted" \
+              -type f \
               \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-              -not -path "./.git/*" | head -n 1)
+              | head -n 1)
 
-            if [ -n "$SETTINGS_FILE" ]; then
-              PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+            if [ -z "$SETTINGS_FILE" ]; then
+              echo "ERREUR : settings.gradle.kts introuvable."
+              echo "Contenu extrait :"
+              find "$GITHUB_WORKSPACE/extracted" -maxdepth 6 -type f | head -n 300
+              exit 1
             fi
-          fi
 
-          # 3. Si toujours rien, chercher dans le ZIP
-          if [ -z "$PROJECT_DIR" ]; then
-            ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+            PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-            if [ -n "$ZIP_FILE" ]; then
-              echo "ZIP trouvé : $ZIP_FILE"
-
-              mkdir -p extracted
-              unzip -q "$ZIP_FILE" -d extracted
-
-              SETTINGS_FILE=$(find extracted -type f \
-                \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-                | head -n 1)
-
-              if [ -n "$SETTINGS_FILE" ]; then
-                PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-              fi
-            fi
-          fi
-
-          # 4. Vérification finale
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERREUR : aucun projet Android avec settings.gradle(.kts) n'a été trouvé."
-            echo "Fichiers trouvés :"
-            find . -maxdepth 4 -type f | head -n 200
-            exit 1
+            echo "Projet Android trouvé : $PROJECT_DIR"
           fi
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo "ERREUR : le dossier app est absent de $PROJECT_DIR"
+            echo "ERREUR : le dossier app est absent."
+            echo "Projet détecté : $PROJECT_DIR"
+            find "$PROJECT_DIR" -maxdepth 3 -type f | head -n 200
             exit 1
           fi
 
-          echo "Projet Android trouvé : $PROJECT_DIR"
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERREUR : fichier Gradle du module app introuvable."
+            exit 1
+          fi
+
+          echo "======================================"
+          echo "Projet Android confirmé."
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          echo "======================================"
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
@@ -91,18 +115,21 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Make Gradle executable
+      - name: Make Gradle wrapper executable
         shell: bash
         run: |
           if [ -f "$PROJECT_DIR/gradlew" ]; then
             chmod +x "$PROJECT_DIR/gradlew"
           fi
 
-      - name: Build APK
+      - name: Build debug APK
         shell: bash
         run: |
           set -e
+
           cd "$PROJECT_DIR"
+
+          echo "Compilation de l'application..."
 
           if [ -f "./gradlew" ]; then
             ./gradlew :app:assembleDebug --no-daemon --stacktrace
@@ -110,9 +137,29 @@ jobs:
             gradle :app:assembleDebug --no-daemon --stacktrace
           fi
 
-      - name: Upload APK
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERREUR : aucun APK n'a été produit."
+            exit 1
+          fi
+
+          echo "======================================"
+          echo "APK créé avec succès :"
+          echo "$APK"
+          echo "======================================"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK
-          path: "**/app/build/outputs/apk/debug/*.apk"
+          path: "**/app/build/outputs/apk/**/*.apk"
           if-no-files-found: error
