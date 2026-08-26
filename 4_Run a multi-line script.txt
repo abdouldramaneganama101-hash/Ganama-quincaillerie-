@@ -1,0 +1,7 @@
+﻿2026-08-26T13:36:47.1605614Z ##[group]Run echo Add other actions to build,
+2026-08-26T13:36:47.1607097Z [36;1mecho Add other actions to build,[0m
+2026-08-26T13:36:47.1608153Z [36;1mecho test, and deploy your project.[0m
+2026-08-26T13:36:47.1647990Z shell: /usr/bin/bash -e {0}
+2026-08-26T13:36:47.1649175Z ##[endgroup]
+2026-08-26T13:36:47.1719491Z Add other actions to build,
+2026-08-26T13:36:47.1721284Z test, and deploy your project.
