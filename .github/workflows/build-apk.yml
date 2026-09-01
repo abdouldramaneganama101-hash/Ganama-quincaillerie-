@@ -1,255 +1,255 @@
-from pathlib import Path
-import zipfile, re, hashlib, shutil, os, json
-
-project_zip = Path("/mnt/data/Ganama_Quincaillerie_ANDROID_VERIFIE_COMPLET.zip")
-apk = Path("/mnt/data/app-debug(2).apk")
-out_zip = Path("/mnt/data/Ganama_Quincaillerie_CORRIGE_COMPLET.zip")
-work = Path("/mnt/data/ganama_full_fix")
-
-if work.exists():
-    shutil.rmtree(work)
-work.mkdir()
-
-with zipfile.ZipFile(project_zip) as z:
-    z.extractall(work)
-
-# Locate project root if archive has a single directory wrapper.
-root = work
-if not (root/"settings.gradle.kts").exists():
-    candidates = [p for p in root.iterdir() if p.is_dir()]
-    for c in candidates:
-        if (c/"settings.gradle.kts").exists() or (c/"settings.gradle").exists():
-            root = c
-            break
-
-# Ensure Kotlin support matches Kotlin source if present.
-app_gradle = root/"app/build.gradle.kts"
-txt = app_gradle.read_text(encoding="utf-8") if app_gradle.exists() else ""
-if 'org.jetbrains.kotlin.android' not in txt and (root/"app/src/main/java").exists():
-    # If Kotlin sources exist, add Kotlin Android plugin and dependency conservatively.
-    has_kt = any(p.suffix == ".kt" for p in (root/"app/src/main/java").rglob("*"))
-    if has_kt:
-        # Root plugins: add Kotlin plugin version if no version catalog.
-        rg = root/"build.gradle.kts"
-        rtxt = rg.read_text(encoding="utf-8")
-        if 'org.jetbrains.kotlin.android' not in rtxt:
-            rtxt = rtxt.replace(
-                'plugins {',
-                'plugins {\n    id("org.jetbrains.kotlin.android") version "2.1.20" apply false',
-                1
-            )
-            rg.write_text(rtxt, encoding="utf-8")
-        txt = txt.replace('plugins {', 'plugins {\n    id("org.jetbrains.kotlin.android")', 1)
-        app_gradle.write_text(txt, encoding="utf-8")
-
-# Normalize MainActivity: prefer existing Kotlin, but make it robust.
-kt_files = list((root/"app/src/main/java").rglob("MainActivity.kt")) if (root/"app/src/main/java").exists() else []
-java_files = list((root/"app/src/main/java").rglob("MainActivity.java")) if (root/"app/src/main/java").exists() else []
-
-if kt_files:
-    main = kt_files[0]
-    pkg = re.search(r'^\s*package\s+([^\s]+)', main.read_text(encoding="utf-8"), re.M)
-    package = pkg.group(1) if pkg else "com.ganama.quincaillerie"
-    main.write_text(f"""package {package}
-
-import android.app.Activity
-import android.os.Bundle
-import android.webkit.WebView
-import android.webkit.WebViewClient
-
-class MainActivity : Activity() {{
-    private lateinit var webView: WebView
-
-    override fun onCreate(savedInstanceState: Bundle?) {{
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        webView = findViewById(R.id.webview)
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.settings.allowFileAccess = true
-        webView.settings.allowContentAccess = true
-        webView.webViewClient = WebViewClient()
-        webView.loadUrl("file:///android_asset/index.html")
-    }}
-
-    override fun onBackPressed() {{
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
-    }}
-
-    override fun onDestroy() {{
-        webView.stopLoading()
-        webView.destroy()
-        super.onDestroy()
-    }}
-}}
-""", encoding="utf-8")
-elif java_files:
-    main = java_files[0]
-    pkg = re.search(r'^\s*package\s+([^\s]+)', main.read_text(encoding="utf-8"), re.M)
-    package = pkg.group(1) if pkg else "com.ganama.quincaillerie"
-    main.write_text(f"""package {package};
-
-import android.app.Activity;
-import android.os.Bundle;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-
-public class MainActivity extends Activity {{
-    private WebView webView;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {{
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        webView = findViewById(R.id.webview);
-        webView.getSettings().setJavaScriptEnabled(true);
-        webView.getSettings().setDomStorageEnabled(true);
-        webView.getSettings().setAllowFileAccess(true);
-        webView.getSettings().setAllowContentAccess(true);
-        webView.setWebViewClient(new WebViewClient());
-        webView.loadUrl("file:///android_asset/index.html");
-    }}
-
-    @Override
-    public void onBackPressed() {{
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
-    }}
-
-    @Override
-    protected void onDestroy() {{
-        if (webView != null) {{
-            webView.stopLoading();
-            webView.destroy();
-        }}
-        super.onDestroy();
-    }}
-}}
-""", encoding="utf-8")
-
-# Make HTML asset references self-contained by copying existing image assets to the names used.
-assets = root/"app/src/main/assets"
-html_path = assets/"index.html"
-html = html_path.read_text(encoding="utf-8") if html_path.exists() else ""
-img_dir = assets/"images"
-img_dir.mkdir(parents=True, exist_ok=True)
-
-# Find existing SVGs and map to expected JPG references by replacing references with SVG paths.
-mapping = {}
-for stem in ["aspirateur", "chaise", "gobelet", "tondeuse", "musculation"]:
-    svg = img_dir/f"{stem}.svg"
-    if svg.exists():
-        mapping[f"images/{stem}.jpg"] = f"images/{stem}.svg"
-        mapping[f"images/{stem}.png"] = f"images/{stem}.svg"
-for old, new in mapping.items():
-    html = html.replace(old, new)
-html_path.write_text(html, encoding="utf-8")
-
-# Manifest: include INTERNET only if HTML actually needs remote resources; harmless for WebView.
-manifest = root/"app/src/main/AndroidManifest.xml"
-m = manifest.read_text(encoding="utf-8")
-if 'android.permission.INTERNET' not in m:
-    m = m.replace('<manifest ', '<manifest ', 1)
-    m = m.replace('>\n', '>\n    <uses-permission android:name="android.permission.INTERNET" />\n', 1)
-manifest.write_text(m, encoding="utf-8")
-
-# Replace workflow with one that can build this ZIP directly after upload.
-wf = root/".github/workflows/build-apk.yml"
-wf.parent.mkdir(parents=True, exist_ok=True)
-wf.write_text("""name: Build Ganama Quincaillerie APK
+name: TEST COMPLET - Ganama Quincaillerie
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  test:
+    name: Vérification complète et construction APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+
+      - name: 1 - Télécharger le projet
         uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: 2 - Installer Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK
+      - name: 3 - Installer Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Android platform
+      - name: 4 - DIAGNOSTIC COMPLET DU PROJET
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          echo "======================================"
+          echo "        STRUCTURE DU PROJET"
+          echo "======================================"
 
-      - name: Gradle
+          pwd
+
+          echo ""
+          echo "FICHIERS PRESENTS :"
+          find . -type f | sort
+
+          echo ""
+          echo "======================================"
+          echo "        FICHIERS ESSENTIELS"
+          echo "======================================"
+
+          files=(
+            "settings.gradle.kts"
+            "build.gradle.kts"
+            "gradle.properties"
+            "app/build.gradle.kts"
+            "app/src/main/AndroidManifest.xml"
+            "app/src/main/java/com/ganama/quincaillerie/MainActivity.java"
+            "app/src/main/res/layout/activity_main.xml"
+            "app/src/main/res/values/strings.xml"
+            "app/src/main/res/values/themes.xml"
+            "app/src/main/res/drawable/ic_ganama_launcher.xml"
+            "app/src/main/assets/index.html"
+          )
+
+          ERREUR=0
+
+          for f in "${files[@]}"; do
+            if [ -f "$f" ]; then
+              echo "OK      : $f"
+            else
+              echo "MANQUANT: $f"
+              ERREUR=1
+            fi
+          done
+
+          echo ""
+          echo "======================================"
+
+          if [ "$ERREUR" -eq 1 ]; then
+            echo "ATTENTION : un ou plusieurs fichiers sont absents."
+            echo "Le test continue volontairement pour montrer toutes les erreurs."
+          else
+            echo "OK : TOUS LES FICHIERS ESSENTIELS SONT PRESENTS."
+          fi
+
+      - name: 5 - Vérifier Gradle
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== BUILD GRADLE ====="
+          cat build.gradle.kts
+
+          echo "===== APP BUILD GRADLE ====="
+          cat app/build.gradle.kts
+
+          echo "===== SETTINGS ====="
+          cat settings.gradle.kts
+
+          echo "===== VERSION GRADLE ====="
+          gradle --version
+
+      - name: 6 - Vérifier MainActivity
+        shell: bash
+        run: |
+          set -e
+
+          FILE="app/src/main/java/com/ganama/quincaillerie/MainActivity.java"
+
+          echo "===== MAIN ACTIVITY ====="
+          cat "$FILE"
+
+          grep -Fq 'package com.ganama.quincaillerie;' "$FILE"
+          grep -Fq 'setContentView(R.layout.activity_main)' "$FILE"
+          grep -Fq 'findViewById(R.id.webview)' "$FILE"
+          grep -Fq 'loadUrl("file:///android_asset/index.html")' "$FILE"
+
+          echo "OK : MainActivity"
+
+      - name: 7 - Vérifier AndroidManifest
+        shell: bash
+        run: |
+          set -e
+
+          FILE="app/src/main/AndroidManifest.xml"
+
+          echo "===== MANIFEST ====="
+          cat "$FILE"
+
+          grep -Fq 'android:name=".MainActivity"' "$FILE"
+          grep -Fq 'android:exported="true"' "$FILE"
+          grep -Fq 'android.intent.action.MAIN' "$FILE"
+          grep -Fq 'android.intent.category.LAUNCHER' "$FILE"
+          grep -Fq 'android:label="@string/app_name"' "$FILE"
+
+          echo "OK : MAIN + LAUNCHER"
+          echo "L'application est configurée pour apparaître dans le téléphone."
+
+      - name: 8 - Vérifier WebView et HTML
+        shell: bash
+        run: |
+          set -e
+
+          grep -Fq 'android:id="@+id/webview"' \
+            app/src/main/res/layout/activity_main.xml
+
+          test -s app/src/main/assets/index.html
+
+          echo "===== HTML ====="
+          head -80 app/src/main/assets/index.html
+
+          echo "OK : WebView et index.html"
+
+      - name: 9 - Vérifier les images
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== IMAGES ====="
+          find app/src/main/assets/images -type f -print
+
+          for f in app/src/main/assets/images/*; do
+            if [ -s "$f" ]; then
+              echo "OK : $f"
+            else
+              echo "ERREUR : fichier vide : $f"
+              exit 1
+            fi
+          done
+
+      - name: 10 - Vérifier les XML
+        shell: bash
+        run: |
+          set -e
+
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          files = [
+              "app/src/main/AndroidManifest.xml",
+              "app/src/main/res/layout/activity_main.xml",
+              "app/src/main/res/values/strings.xml",
+              "app/src/main/res/values/themes.xml",
+              "app/src/main/res/drawable/ic_ganama_launcher.xml"
+          ]
+
+          for f in files:
+              ET.parse(f)
+              print("OK XML :", f)
+          PY
+
+      - name: 11 - Installer Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
 
-      - name: Verify project
+      - name: 12 - Nettoyer
+        shell: bash
         run: |
           set -e
-          test -f settings.gradle.kts || test -f settings.gradle
-          test -f app/build.gradle.kts || test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          find app/src/main/assets -type f -print
+          gradle clean --no-daemon
 
-      - name: Build
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: 13 - COMPILATION REELLE APK
+        shell: bash
+        run: |
+          set -e
 
-      - name: Verify APK
-        run: test -s app/build/outputs/apk/debug/app-debug.apk
+          echo "======================================"
+          echo "       CONSTRUCTION DE L'APK"
+          echo "======================================"
 
-      - name: Upload APK
+          gradle :app:assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: 14 - Vérifier APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          echo "===== RECHERCHE APK ====="
+
+          find app/build -type f -name "*.apk" -print
+
+          test -s "$APK"
+
+          echo ""
+          echo "APK TROUVE :"
+          ls -lh "$APK"
+
+      - name: 15 - Vérifier identité APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+
+          "$AAPT" dump badging "$APK" > /tmp/apk.txt
+
+          cat /tmp/apk.txt
+
+          grep -Fq "com.ganama.quincaillerie" /tmp/apk.txt
+          grep -Fq "Ganama Quincaillerie" /tmp/apk.txt
+          grep -Fq "com.ganama.quincaillerie.MainActivity" /tmp/apk.txt
+
+          echo "OK : identité APK correcte."
+
+      - name: 16 - Publier APK
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK-FINAL
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-""", encoding="utf-8")
-
-# Remove nested old workflows to prevent confusion if multiple exist.
-for p in root.rglob("*.yml"):
-    if p != wf and ".github" in str(p) and "workflows" in str(p):
-        try: p.unlink()
-        except: pass
-
-# Add a clear README.
-(root/"README.md").write_text("""# Ganama Quincaillerie
-
-Projet Android WebView avec contenu local.
-
-## Vérifications effectuées
-- structure Gradle et module `app`
-- activité principale et WebView
-- manifeste Android
-- `index.html`
-- ressources d'images
-- workflow GitHub Actions
-- archive ZIP finale
-""", encoding="utf-8")
-
-# Package.
-if out_zip.exists(): out_zip.unlink()
-with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as z:
-    for p in sorted(root.rglob("*")):
-        if p.is_file():
-            z.write(p, p.relative_to(root))
-
-with zipfile.ZipFile(out_zip) as z:
-    assert z.testzip() is None
-
-# Compare actual APK to the project package contents where possible.
-with zipfile.ZipFile(apk) as az:
-    names = set(az.namelist())
-    apk_assets = sorted(n for n in names if n.startswith("assets/"))
-    dex = sorted(n for n in names if n.endswith(".dex"))
-    print("APK analysé :", apk.name)
-    print("DEX :", dex)
-    print("Assets APK :", apk_assets[:30])
-
-print("ZIP corrigé :", out_zip)
-print("Intégrité ZIP : OK")
-print("Projet source et workflow réécrits et vérifiés.")
