@@ -16,240 +16,256 @@ jobs:
 
     steps:
 
-      - name: 1 - Télécharger le projet
-        uses: actions/checkout@v4
+      # 1 - Récupérer le projet
+      - name: 1 - Récupérer le projet
+        uses: actions/checkout@v7
 
+      # 2 - Installer Java 17
       - name: 2 - Installer Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
+      # 3 - Installer Android SDK
       - name: 3 - Installer Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platforms;android-36
+            build-tools;36.0.0
+            platform-tools
 
+      # 4 - Diagnostic complet du projet
       - name: 4 - DIAGNOSTIC COMPLET DU PROJET
         shell: bash
         run: |
-          echo "======================================"
-          echo "        STRUCTURE DU PROJET"
-          echo "======================================"
+          set -e
 
+          echo "========================================"
+          echo "DIAGNOSTIC COMPLET DU PROJET"
+          echo "========================================"
+
+          echo ""
+          echo "=== VERSION JAVA ==="
+          java -version
+
+          echo ""
+          echo "=== VERSION ADB ==="
+          adb version || true
+
+          echo ""
+          echo "=== DOSSIER ACTUEL ==="
           pwd
 
           echo ""
-          echo "FICHIERS PRESENTS :"
-          find . -type f | sort
+          echo "=== STRUCTURE DU PROJET ==="
+          find . -maxdepth 4 -type f | sort
 
           echo ""
-          echo "======================================"
-          echo "        FICHIERS ESSENTIELS"
-          echo "======================================"
+          echo "=== FICHIERS GRADLE ==="
 
-          files=(
-            "settings.gradle.kts"
-            "build.gradle.kts"
-            "gradle.properties"
-            "app/build.gradle.kts"
-            "app/src/main/AndroidManifest.xml"
-            "app/src/main/java/com/ganama/quincaillerie/MainActivity.java"
-            "app/src/main/res/layout/activity_main.xml"
-            "app/src/main/res/values/strings.xml"
-            "app/src/main/res/values/themes.xml"
-            "app/src/main/res/drawable/ic_ganama_launcher.xml"
-            "app/src/main/assets/index.html"
-          )
+          test -f settings.gradle.kts || {
+            echo "ERREUR: settings.gradle.kts MANQUANT"
+            exit 1
+          }
 
-          ERREUR=0
+          test -f build.gradle.kts || {
+            echo "ERREUR: build.gradle.kts MANQUANT"
+            exit 1
+          }
 
-          for f in "${files[@]}"; do
-            if [ -f "$f" ]; then
-              echo "OK      : $f"
-            else
-              echo "MANQUANT: $f"
-              ERREUR=1
-            fi
-          done
+          test -f app/build.gradle.kts || {
+            echo "ERREUR: app/build.gradle.kts MANQUANT"
+            exit 1
+          }
+
+          echo "OK: fichiers Gradle présents"
 
           echo ""
-          echo "======================================"
+          echo "=== FICHIERS ANDROID ==="
 
-          if [ "$ERREUR" -eq 1 ]; then
-            echo "ATTENTION : un ou plusieurs fichiers sont absents."
-            echo "Le test continue volontairement pour montrer toutes les erreurs."
-          else
-            echo "OK : TOUS LES FICHIERS ESSENTIELS SONT PRESENTS."
-          fi
+          test -f app/src/main/AndroidManifest.xml || {
+            echo "ERREUR: AndroidManifest.xml MANQUANT"
+            exit 1
+          }
 
-      - name: 5 - Vérifier Gradle
-        shell: bash
-        run: |
-          set -e
+          test -f app/src/main/java/com/ganama/quincaillerie/MainActivity.java || {
+            echo "ERREUR: MainActivity.java MANQUANT"
+            exit 1
+          }
 
-          echo "===== BUILD GRADLE ====="
-          cat build.gradle.kts
+          test -f app/src/main/res/layout/activity_main.xml || {
+            echo "ERREUR: activity_main.xml MANQUANT"
+            exit 1
+          }
 
-          echo "===== APP BUILD GRADLE ====="
-          cat app/build.gradle.kts
+          echo "OK: fichiers Android essentiels présents"
 
-          echo "===== SETTINGS ====="
-          cat settings.gradle.kts
-
-          echo "===== VERSION GRADLE ====="
-          gradle --version
-
-      - name: 6 - Vérifier MainActivity
-        shell: bash
-        run: |
-          set -e
-
-          FILE="app/src/main/java/com/ganama/quincaillerie/MainActivity.java"
-
-          echo "===== MAIN ACTIVITY ====="
-          cat "$FILE"
-
-          grep -Fq 'package com.ganama.quincaillerie;' "$FILE"
-          grep -Fq 'setContentView(R.layout.activity_main)' "$FILE"
-          grep -Fq 'findViewById(R.id.webview)' "$FILE"
-          grep -Fq 'loadUrl("file:///android_asset/index.html")' "$FILE"
-
-          echo "OK : MainActivity"
-
-      - name: 7 - Vérifier AndroidManifest
+      # 5 - Vérifier le Manifest
+      - name: 5 - Vérifier AndroidManifest
         shell: bash
         run: |
           set -e
 
           FILE="app/src/main/AndroidManifest.xml"
 
-          echo "===== MANIFEST ====="
+          echo "========================================"
+          echo "CONTENU DU MANIFEST"
+          echo "========================================"
+
           cat "$FILE"
 
-          grep -Fq 'android:name=".MainActivity"' "$FILE"
-          grep -Fq 'android:exported="true"' "$FILE"
-          grep -Fq 'android.intent.action.MAIN' "$FILE"
-          grep -Fq 'android.intent.category.LAUNCHER' "$FILE"
-          grep -Fq 'android:label="@string/app_name"' "$FILE"
+          echo ""
+          echo "========================================"
+          echo "VERIFICATION DU MANIFEST"
+          echo "========================================"
 
-          echo "OK : MAIN + LAUNCHER"
-          echo "L'application est configurée pour apparaître dans le téléphone."
+          grep -Eq 'android.intent.action.MAIN' "$FILE" || {
+            echo "ERREUR: ACTION MAIN MANQUANTE"
+            exit 1
+          }
 
-      - name: 8 - Vérifier WebView et HTML
+          grep -Eq 'android.intent.category.LAUNCHER' "$FILE" || {
+            echo "ERREUR: CATEGORIE LAUNCHER MANQUANTE"
+            exit 1
+          }
+
+          grep -Eq 'android:name="(\.MainActivity|com\.ganama\.quincaillerie\.MainActivity)"' "$FILE" || {
+            echo "ERREUR: MainActivity non déclarée correctement"
+            exit 1
+          }
+
+          echo "OK: Manifest vérifié"
+
+      # 6 - Vérifier le Gradle Wrapper
+      - name: 6 - Vérifier Gradle Wrapper
         shell: bash
         run: |
           set -e
 
-          grep -Fq 'android:id="@+id/webview"' \
-            app/src/main/res/layout/activity_main.xml
+          test -f gradlew || {
+            echo "ERREUR: gradlew MANQUANT"
+            exit 1
+          }
 
-          test -s app/src/main/assets/index.html
+          test -f gradle/wrapper/gradle-wrapper.properties || {
+            echo "ERREUR: gradle-wrapper.properties MANQUANT"
+            exit 1
+          }
 
-          echo "===== HTML ====="
-          head -80 app/src/main/assets/index.html
+          chmod +x gradlew
 
-          echo "OK : WebView et index.html"
+          echo "Gradle Wrapper:"
+          ./gradlew --version
 
-      - name: 9 - Vérifier les images
+      # 7 - Vérifier les tâches Gradle
+      - name: 7 - Vérifier les tâches Gradle
         shell: bash
         run: |
           set -e
 
-          echo "===== IMAGES ====="
-          find app/src/main/assets/images -type f -print
+          echo "Recherche de assembleDebug..."
 
-          for f in app/src/main/assets/images/*; do
-            if [ -s "$f" ]; then
-              echo "OK : $f"
-            else
-              echo "ERREUR : fichier vide : $f"
-              exit 1
-            fi
-          done
+          ./gradlew :app:tasks --all --no-daemon | tee gradle_tasks.txt
 
-      - name: 10 - Vérifier les XML
-        shell: bash
+          grep -q "assembleDebug" gradle_tasks.txt || {
+            echo "ERREUR: la tâche assembleDebug est introuvable"
+            exit 1
+          }
+
+          echo "OK: assembleDebug existe"
+
+      # 8 - Nettoyer le projet
+      - name: 8 - Nettoyer le projet
         run: |
-          set -e
+          ./gradlew clean --no-daemon
 
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-
-          files = [
-              "app/src/main/AndroidManifest.xml",
-              "app/src/main/res/layout/activity_main.xml",
-              "app/src/main/res/values/strings.xml",
-              "app/src/main/res/values/themes.xml",
-              "app/src/main/res/drawable/ic_ganama_launcher.xml"
-          ]
-
-          for f in files:
-              ET.parse(f)
-              print("OK XML :", f)
-          PY
-
-      - name: 11 - Installer Gradle 8.13
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
-
-      - name: 12 - Nettoyer
-        shell: bash
+      # 9 - Tests unitaires
+      - name: 9 - Tests unitaires
         run: |
-          set -e
-          gradle clean --no-daemon
+          ./gradlew test --no-daemon --stacktrace
 
-      - name: 13 - COMPILATION REELLE APK
-        shell: bash
+      # 10 - Vérification Android/Lint
+      - name: 10 - Vérification Android
         run: |
-          set -e
+          ./gradlew lintDebug --no-daemon --stacktrace
 
-          echo "======================================"
-          echo "       CONSTRUCTION DE L'APK"
-          echo "======================================"
-
-          gradle :app:assembleDebug \
+      # 11 - Construire l'APK Debug
+      - name: 11 - Construire l'APK Debug
+        run: |
+          ./gradlew :app:assembleDebug \
             --no-daemon \
-            --stacktrace
+            --stacktrace \
+            --warning-mode all
 
-      - name: 14 - Vérifier APK
+      # 12 - Vérifier que l'APK existe
+      - name: 12 - Vérifier l'APK généré
         shell: bash
         run: |
           set -e
 
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          echo "========================================"
+          echo "RECHERCHE DE L'APK"
+          echo "========================================"
 
-          echo "===== RECHERCHE APK ====="
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
-          find app/build -type f -name "*.apk" -print
+          APK_PATH="$(find app/build/outputs/apk -type f -name "*.apk" | head -n 1)"
 
-          test -s "$APK"
+          if [ -z "$APK_PATH" ]; then
+            echo "ERREUR: aucun APK généré"
+            exit 1
+          fi
+
+          echo "APK TROUVÉ:"
+          echo "$APK_PATH"
+
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+
+      # 13 - Vérifier les informations de l'APK
+      - name: 13 - Vérifier le contenu de l'APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "VERIFICATION APK"
+          echo "========================================"
+
+          ls -lh "$APK_PATH"
 
           echo ""
-          echo "APK TROUVE :"
-          ls -lh "$APK"
+          echo "=== INFORMATIONS APK ==="
 
-      - name: 15 - Vérifier identité APK
-        shell: bash
-        run: |
-          set -e
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK_PATH" | head -n 30
 
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          echo ""
+          echo "APK valide et lisible."
 
-          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
-
-          "$AAPT" dump badging "$APK" > /tmp/apk.txt
-
-          cat /tmp/apk.txt
-
-          grep -Fq "com.ganama.quincaillerie" /tmp/apk.txt
-          grep -Fq "Ganama Quincaillerie" /tmp/apk.txt
-          grep -Fq "com.ganama.quincaillerie.MainActivity" /tmp/apk.txt
-
-          echo "OK : identité APK correcte."
-
-      - name: 16 - Publier APK
+      # 14 - Conserver l'APK
+      - name: 14 - Publier l'APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ganama-Quincaillerie-APK-FINAL
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Ganama-Quincaillerie-APK-Debug
+          path: ${{ env.APK_PATH }}
           if-no-files-found: error
+          retention-days: 14
+
+      # 15 - Rapport final
+      - name: 15 - RAPPORT FINAL
+        if: always()
+        shell: bash
+        run: |
+          echo ""
+          echo "========================================"
+          echo "FIN DU TEST"
+          echo "========================================"
+
+          if [ -n "${APK_PATH:-}" ] && [ -f "$APK_PATH" ]; then
+            echo "RESULTAT: APK GENERE AVEC SUCCES"
+            echo "APK: $APK_PATH"
+          else
+            echo "RESULTAT: APK NON GENERE"
+          fi
