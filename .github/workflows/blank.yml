@@ -11,34 +11,71 @@ permissions:
 
 jobs:
   test:
-    name: Vérification complète et construction APK
+    name: Verification complete et construction APK
     runs-on: ubuntu-latest
 
     steps:
 
-      # 1 - Récupérer le projet
-      - name: 1 - Récupérer le projet
+      # ============================================================
+      # 1. RECUPERATION DU PROJET
+      # ============================================================
+      - name: 1 - Recuperer le projet
         uses: actions/checkout@v7
 
-      # 2 - Installer Java 17
+      # ============================================================
+      # 2. INSTALLATION DE JAVA 17
+      # ============================================================
       - name: 2 - Installer Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
 
-      # 3 - Installer Android SDK
+      # ============================================================
+      # 3. INSTALLATION DU SDK ANDROID
+      # ============================================================
       - name: 3 - Installer Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: |
+            platform-tools
             platforms;android-36
             build-tools;36.0.0
-            platform-tools
 
-      # 4 - Diagnostic complet du projet
-      - name: 4 - DIAGNOSTIC COMPLET DU PROJET
+      # ============================================================
+      # 4. VERIFICATION DE L'ENVIRONNEMENT
+      # ============================================================
+      - name: 4 - Verifier l'environnement
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "ENVIRONNEMENT"
+          echo "========================================"
+
+          echo ""
+          echo "=== JAVA ==="
+          java -version
+
+          echo ""
+          echo "=== ANDROID SDK ==="
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          echo ""
+          echo "=== ADB ==="
+          adb version
+
+          echo ""
+          echo "=== SDK MANAGER ==="
+          sdkmanager --version
+
+      # ============================================================
+      # 5. VERIFICATION DE LA STRUCTURE DU PROJET
+      # ============================================================
+      - name: 5 - Diagnostic complet du projet
         shell: bash
         run: |
           set -e
@@ -48,23 +85,19 @@ jobs:
           echo "========================================"
 
           echo ""
-          echo "=== VERSION JAVA ==="
-          java -version
-
-          echo ""
-          echo "=== VERSION ADB ==="
-          adb version || true
-
-          echo ""
           echo "=== DOSSIER ACTUEL ==="
           pwd
 
           echo ""
-          echo "=== STRUCTURE DU PROJET ==="
-          find . -maxdepth 4 -type f | sort
+          echo "=== RACINE DU PROJET ==="
+          ls -la
 
           echo ""
-          echo "=== FICHIERS GRADLE ==="
+          echo "=== STRUCTURE ==="
+          find . -maxdepth 5 -type f | sort
+
+          echo ""
+          echo "=== VERIFICATION DES FICHIERS ESSENTIELS ==="
 
           test -f settings.gradle.kts || {
             echo "ERREUR: settings.gradle.kts MANQUANT"
@@ -81,10 +114,15 @@ jobs:
             exit 1
           }
 
-          echo "OK: fichiers Gradle présents"
+          test -f gradlew || {
+            echo "ERREUR: gradlew MANQUANT"
+            exit 1
+          }
 
-          echo ""
-          echo "=== FICHIERS ANDROID ==="
+          test -f gradle/wrapper/gradle-wrapper.properties || {
+            echo "ERREUR: gradle-wrapper.properties MANQUANT"
+            exit 1
+          }
 
           test -f app/src/main/AndroidManifest.xml || {
             echo "ERREUR: AndroidManifest.xml MANQUANT"
@@ -101,10 +139,83 @@ jobs:
             exit 1
           }
 
-          echo "OK: fichiers Android essentiels présents"
+          echo ""
+          echo "TOUS LES FICHIERS ESSENTIELS SONT PRESENTS."
 
-      # 5 - Vérifier le Manifest
-      - name: 5 - Vérifier AndroidManifest
+      # ============================================================
+      # 6. VERIFICATION DE SETTINGS.GRADLE.KTS
+      # ============================================================
+      - name: 6 - Verifier settings.gradle.kts
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "SETTINGS.GRADLE.KTS"
+          echo "========================================"
+
+          cat settings.gradle.kts
+
+          grep -q "app" settings.gradle.kts || {
+            echo "ERREUR: le module app n'est pas reference"
+            exit 1
+          }
+
+          echo "OK: settings.gradle.kts"
+
+      # ============================================================
+      # 7. VERIFICATION DU BUILD GRADLE PRINCIPAL
+      # ============================================================
+      - name: 7 - Verifier build.gradle.kts
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "BUILD.GRADLE.KTS"
+          echo "========================================"
+
+          cat build.gradle.kts
+
+          echo ""
+          echo "OK: build.gradle.kts present"
+
+      # ============================================================
+      # 8. VERIFICATION DU BUILD GRADLE DE L'APPLICATION
+      # ============================================================
+      - name: 8 - Verifier app/build.gradle.kts
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "APP/BUILD.GRADLE.KTS"
+          echo "========================================"
+
+          cat app/build.gradle.kts
+
+          grep -q "com.android.application" app/build.gradle.kts || {
+            echo "ERREUR: plugin Android application absent"
+            exit 1
+          }
+
+          grep -q "namespace" app/build.gradle.kts || {
+            echo "ERREUR: namespace absent"
+            exit 1
+          }
+
+          grep -q "applicationId" app/build.gradle.kts || {
+            echo "ERREUR: applicationId absent"
+            exit 1
+          }
+
+          echo ""
+          echo "OK: app/build.gradle.kts"
+
+      # ============================================================
+      # 9. VERIFICATION DU MANIFEST
+      # ============================================================
+      - name: 9 - Verifier AndroidManifest.xml
         shell: bash
         run: |
           set -e
@@ -112,7 +223,7 @@ jobs:
           FILE="app/src/main/AndroidManifest.xml"
 
           echo "========================================"
-          echo "CONTENU DU MANIFEST"
+          echo "ANDROID MANIFEST"
           echo "========================================"
 
           cat "$FILE"
@@ -133,99 +244,173 @@ jobs:
           }
 
           grep -Eq 'android:name="(\.MainActivity|com\.ganama\.quincaillerie\.MainActivity)"' "$FILE" || {
-            echo "ERREUR: MainActivity non déclarée correctement"
+            echo "ERREUR: MainActivity NON DECLAREE CORRECTEMENT"
             exit 1
           }
 
-          echo "OK: Manifest vérifié"
+          echo "OK: AndroidManifest.xml"
 
-      # 6 - Vérifier le Gradle Wrapper
-      - name: 6 - Vérifier Gradle Wrapper
+      # ============================================================
+      # 10. VERIFICATION DE MAINACTIVITY
+      # ============================================================
+      - name: 10 - Verifier MainActivity.java
         shell: bash
         run: |
           set -e
 
-          test -f gradlew || {
-            echo "ERREUR: gradlew MANQUANT"
+          FILE="app/src/main/java/com/ganama/quincaillerie/MainActivity.java"
+
+          echo "========================================"
+          echo "MAIN ACTIVITY"
+          echo "========================================"
+
+          cat "$FILE"
+
+          grep -q "package com.ganama.quincaillerie" "$FILE" || {
+            echo "ERREUR: package incorrect"
             exit 1
           }
 
-          test -f gradle/wrapper/gradle-wrapper.properties || {
-            echo "ERREUR: gradle-wrapper.properties MANQUANT"
+          grep -q "class MainActivity" "$FILE" || {
+            echo "ERREUR: classe MainActivity introuvable"
             exit 1
           }
+
+          echo "OK: MainActivity.java"
+
+      # ============================================================
+      # 11. VERIFICATION DU LAYOUT
+      # ============================================================
+      - name: 11 - Verifier activity_main.xml
+        shell: bash
+        run: |
+          set -e
+
+          FILE="app/src/main/res/layout/activity_main.xml"
+
+          echo "========================================"
+          echo "ACTIVITY MAIN XML"
+          echo "========================================"
+
+          cat "$FILE"
+
+          test -s "$FILE" || {
+            echo "ERREUR: activity_main.xml est vide"
+            exit 1
+          }
+
+          echo "OK: activity_main.xml"
+
+      # ============================================================
+      # 12. PREPARATION DE GRADLE
+      # ============================================================
+      - name: 12 - Preparer Gradle
+        shell: bash
+        run: |
+          set -e
 
           chmod +x gradlew
 
-          echo "Gradle Wrapper:"
+          echo "=== VERSION GRADLE ==="
           ./gradlew --version
 
-      # 7 - Vérifier les tâches Gradle
-      - name: 7 - Vérifier les tâches Gradle
+      # ============================================================
+      # 13. VERIFICATION DES TACHES GRADLE
+      # ============================================================
+      - name: 13 - Verifier les taches Gradle
         shell: bash
         run: |
           set -e
-
-          echo "Recherche de assembleDebug..."
 
           ./gradlew :app:tasks --all --no-daemon | tee gradle_tasks.txt
 
           grep -q "assembleDebug" gradle_tasks.txt || {
-            echo "ERREUR: la tâche assembleDebug est introuvable"
+            echo "ERREUR: assembleDebug introuvable"
             exit 1
           }
 
           echo "OK: assembleDebug existe"
 
-      # 8 - Nettoyer le projet
-      - name: 8 - Nettoyer le projet
+      # ============================================================
+      # 14. NETTOYAGE COMPLET
+      # ============================================================
+      - name: 14 - Nettoyer le projet
         run: |
-          ./gradlew clean --no-daemon
+          ./gradlew clean --no-daemon --stacktrace
 
-      # 9 - Tests unitaires
-      - name: 9 - Tests unitaires
+      # ============================================================
+      # 15. COMPILATION JAVA
+      # ============================================================
+      - name: 15 - Compiler le code Java
         run: |
-          ./gradlew test --no-daemon --stacktrace
+          ./gradlew :app:compileDebugJavaWithJavac \
+            --no-daemon \
+            --stacktrace
 
-      # 10 - Vérification Android/Lint
-      - name: 10 - Vérification Android
+      # ============================================================
+      # 16. TESTS UNITAIRES
+      # ============================================================
+      - name: 16 - Executer les tests unitaires
         run: |
-          ./gradlew lintDebug --no-daemon --stacktrace
+          ./gradlew :app:testDebugUnitTest \
+            --no-daemon \
+            --stacktrace
 
-      # 11 - Construire l'APK Debug
-      - name: 11 - Construire l'APK Debug
+      # ============================================================
+      # 17. VERIFICATION LINT
+      # ============================================================
+      - name: 17 - Executer Android Lint
+        run: |
+          ./gradlew :app:lintDebug \
+            --no-daemon \
+            --stacktrace
+
+      # ============================================================
+      # 18. CONSTRUCTION APK DEBUG
+      # ============================================================
+      - name: 18 - Construire APK Debug
         run: |
           ./gradlew :app:assembleDebug \
             --no-daemon \
             --stacktrace \
             --warning-mode all
 
-      # 12 - Vérifier que l'APK existe
-      - name: 12 - Vérifier l'APK généré
+      # ============================================================
+      # 19. RECHERCHE DE L'APK
+      # ============================================================
+      - name: 19 - Rechercher APK
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "RECHERCHE DE L'APK"
+          echo "RECHERCHE APK"
           echo "========================================"
 
-          find app/build/outputs/apk -type f -name "*.apk" -print
+          find app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            -print
 
-          APK_PATH="$(find app/build/outputs/apk -type f -name "*.apk" | head -n 1)"
+          APK_PATH="$(find app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)"
 
           if [ -z "$APK_PATH" ]; then
-            echo "ERREUR: aucun APK généré"
+            echo "ERREUR: AUCUN APK GENERE"
             exit 1
           fi
 
-          echo "APK TROUVÉ:"
+          echo "APK TROUVE:"
           echo "$APK_PATH"
 
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
 
-      # 13 - Vérifier les informations de l'APK
-      - name: 13 - Vérifier le contenu de l'APK
+      # ============================================================
+      # 20. VERIFICATION DU FICHIER APK
+      # ============================================================
+      - name: 20 - Verifier APK
         shell: bash
         run: |
           set -e
@@ -234,38 +419,100 @@ jobs:
           echo "VERIFICATION APK"
           echo "========================================"
 
+          test -f "$APK_PATH" || {
+            echo "ERREUR: APK introuvable"
+            exit 1
+          }
+
+          test -s "$APK_PATH" || {
+            echo "ERREUR: APK vide"
+            exit 1
+          }
+
           ls -lh "$APK_PATH"
 
           echo ""
-          echo "=== INFORMATIONS APK ==="
+          echo "=== AAPT BADGING ==="
 
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK_PATH" | head -n 30
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" \
+            dump badging "$APK_PATH"
 
           echo ""
-          echo "APK valide et lisible."
+          echo "APK VALIDE."
 
-      # 14 - Conserver l'APK
-      - name: 14 - Publier l'APK
+      # ============================================================
+      # 21. VERIFICATION DU PACKAGE
+      # ============================================================
+      - name: 21 - Verifier le package APK
+        shell: bash
+        run: |
+          set -e
+
+          PACKAGE_NAME="$(
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" \
+            dump badging "$APK_PATH" |
+            sed -n "s/^package: name='\([^']*\)'.*/\1/p" |
+            head -n 1
+          )"
+
+          if [ -z "$PACKAGE_NAME" ]; then
+            echo "ERREUR: package introuvable dans APK"
+            exit 1
+          fi
+
+          echo "PACKAGE APK:"
+          echo "$PACKAGE_NAME"
+
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 22. COPIE DE L'APK DANS UN DOSSIER PROPRE
+      # ============================================================
+      - name: 22 - Prepararer APK pour artifact
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p artifacts
+
+          cp "$APK_PATH" \
+            "artifacts/Ganama-Quincaillerie-Debug.apk"
+
+          ls -lh artifacts/
+
+      # ============================================================
+      # 23. PUBLIER L'APK
+      # ============================================================
+      - name: 23 - Publier APK
         uses: actions/upload-artifact@v4
         with:
           name: Ganama-Quincaillerie-APK-Debug
-          path: ${{ env.APK_PATH }}
+          path: artifacts/Ganama-Quincaillerie-Debug.apk
           if-no-files-found: error
           retention-days: 14
 
-      # 15 - Rapport final
-      - name: 15 - RAPPORT FINAL
+      # ============================================================
+      # 24. RAPPORT FINAL
+      # ============================================================
+      - name: 24 - Rapport final
         if: always()
         shell: bash
         run: |
           echo ""
           echo "========================================"
-          echo "FIN DU TEST"
+          echo "RAPPORT FINAL"
           echo "========================================"
 
           if [ -n "${APK_PATH:-}" ] && [ -f "$APK_PATH" ]; then
-            echo "RESULTAT: APK GENERE AVEC SUCCES"
+            echo "RESULTAT: SUCCES"
             echo "APK: $APK_PATH"
+            echo "PACKAGE: ${PACKAGE_NAME:-inconnu}"
           else
-            echo "RESULTAT: APK NON GENERE"
+            echo "RESULTAT: ECHEC"
+            echo "Aucun APK disponible."
           fi
+
+          echo ""
+          echo "========================================"
+          echo "FIN DU TEST"
+          echo "========================================"
